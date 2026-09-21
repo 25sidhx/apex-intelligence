@@ -3,6 +3,7 @@ APEX Unified CLI: Terminal control center for Embedded Intelligence & Engineerin
 """
 
 import typer
+import datetime
 from pathlib import Path
 from rich.console import Console
 from rich.table import Table
@@ -13,6 +14,8 @@ from apex.engineering.scaffolds import scaffold_project, TEMPLATES
 from apex.content.humanizer import audit_text, clean_text
 from apex.utils.context_filter import filter_compiler_output
 from apex.utils.worktree_mgr import WorktreeManager
+from apex.reporting.daily import generate_daily_report
+from apex.reporting.weekly import generate_weekly_report
 
 app = typer.Typer(help="APEX: Autonomous Tech Intelligence & Embedded Engineering System")
 console = Console(safe_box=True)
@@ -27,7 +30,6 @@ def scan(
     Scouts arXiv and GitHub for recent robotics, drone, and embedded developments.
     """
     console.print("\n[bold cyan][APEX RADAR] Scanning High-Signal Engineering Sources...[/bold cyan]\n")
-
 
     if category in ["all", "arxiv"]:
         papers = fetch_recent_papers(max_results=limit * 2)
@@ -65,6 +67,36 @@ def scan(
                 )
             console.print(table)
             console.print("")
+
+
+@app.command()
+def daily(limit: int = typer.Option(5, help="Number of items to report")):
+    """Generates the high-signal daily intelligence digest (Section 11)."""
+    console.print("\n[bold cyan][APEX] Running Daily Intelligence Scan...[/bold cyan]")
+    papers = fetch_recent_papers(max_results=limit*2)
+    repos = fetch_trending_repos(max_results=limit*2)
+    report = generate_daily_report(papers, repos, limit=limit)
+    
+    out_path = Path(f"projects/daily_report_{datetime.date.today().isoformat()}.md")
+    out_path.parent.mkdir(exist_ok=True)
+    out_path.write_text(report, encoding="utf-8")
+    
+    console.print(f"[bold green]✓ Daily Report saved to:[/bold green] {out_path.resolve()}")
+
+
+@app.command()
+def weekly():
+    """Generates the comprehensive weekly engineering intelligence report (Section 12)."""
+    console.print("\n[bold cyan][APEX] Aggregating Weekly Intelligence...[/bold cyan]")
+    papers = fetch_recent_papers(max_results=20)
+    repos = fetch_trending_repos(max_results=20)
+    report = generate_weekly_report(papers, repos)
+    
+    out_path = Path(f"projects/weekly_report_{datetime.date.today().isoformat()}.md")
+    out_path.parent.mkdir(exist_ok=True)
+    out_path.write_text(report, encoding="utf-8")
+    
+    console.print(f"[bold green]✓ Weekly Report saved to:[/bold green] {out_path.resolve()}")
 
 
 @app.command()
