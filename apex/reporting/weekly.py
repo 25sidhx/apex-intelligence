@@ -1,80 +1,221 @@
 """
-APEX Weekly Intelligence Report Generator.
-Strict adherence to Section 12 structural requirements.
+APEX Weekly Intelligence Report Generator v2.
+All 12 sections populated from scored data. No placeholders.
 """
 
 from typing import List, Dict, Any
-from apex.intelligence.scoring import calculate_apex_score, evaluate_personal_relevance
-from apex.memory.store import add_discovery, is_duplicate, mark_reported
+from apex.intelligence.scoring import calculate_apex_score, classify_action
+from apex.memory.store import add_discovery, is_duplicate, is_similar_title, mark_reported, add_trend_snapshot
 import datetime
 
+
+MIN_SCORE = 20.0
+
+
+def _categorize(items: List[Dict]) -> Dict[str, List[Dict]]:
+    """Splits items into domain buckets based on matched keywords and text content."""
+    buckets: Dict[str, List[Dict]] = {
+        "electronics": [],
+        "drones": [],
+        "ai_hardware": [],
+        "research": [],
+        "open_source": [],
+        "hardware_news": [],
+    }
+    elec_kws = {"esp32", "stm32", "rp2040", "fpga", "verilog", "pcb", "kicad", "sensor", "adc", "spi", "i2c", "motor", "bldc", "lora", "rf", "antenna", "battery", "bms"}
+    drone_kws = {"drone", "uav", "px4", "ardupilot", "betaflight", "flight controller", "mavlink", "slam", "gps-denied", "visual odometry", "swarm", "fpv", "autonomous"}
+    ai_kws = {"tinyml", "edge ai", "quantized", "onnx", "tensorrt", "npu", "tpu", "jetson", "hailo", "inference", "yolo", "object detection", "computer vision"}
+
+    for item in items:
+        text = " ".join([str(item.get("title", "")), str(item.get("summary", "")), str(item.get("description", ""))]).lower()
+        placed = False
+        if any(kw in text for kw in drone_kws):
+            buckets["drones"].append(item)
+            placed = True
+        if any(kw in text for kw in elec_kws):
+            buckets["electronics"].append(item)
+            placed = True
+        if any(kw in text for kw in ai_kws):
+            buckets["ai_hardware"].append(item)
+            placed = True
+        if item.get("source_type") == "paper":
+            buckets["research"].append(item)
+            placed = True
+        if item.get("source_type") == "repo":
+            buckets["open_source"].append(item)
+            placed = True
+
+    return buckets
+
+
 def generate_weekly_report(papers: List[Dict[str, Any]], repos: List[Dict[str, Any]]) -> str:
-    """Generates the structured weekly report based on Section 12."""
-    
-    # In a full implementation, this would pull from the SQLite DB 
-    # for all discoveries over the last 7 days.
-    # For now, we process the live scan results.
-    
+    """Generates 12-section weekly report with real data in every section."""
+
     candidates = []
-    
     for p in papers:
-        p["source_type"] = "paper"
-        if not is_duplicate(p["id"]): candidates.append(p)
+        p["source_type"] = p.get("source_type", "paper")
+        if not is_duplicate(p.get("id", "")) and not is_similar_title(p.get("title", "")):
+            candidates.append(p)
     for r in repos:
-        r["source_type"] = "repo"
-        if not is_duplicate(r["html_url"]): candidates.append(r)
-        
+        r["source_type"] = r.get("source_type", "repo")
+        if not is_duplicate(r.get("html_url", "")) and not is_similar_title(r.get("name", "")):
+            candidates.append(r)
+
+    # Score
     for c in candidates:
-        c["apex_score"] = calculate_apex_score(c)
-        c["relevance_class"], c["relevance_reason"] = evaluate_personal_relevance(c)
-        
+        text = " ".join([str(c.get("title", "")), str(c.get("summary", "")), str(c.get("description", ""))]).lower()
+        apex, breakdown, explanation = calculate_apex_score(c)
+        c["apex_score"] = apex
+        c["score_breakdown"] = breakdown
+        c["score_explanation"] = explanation
+        c["action_class"] = classify_action(apex, breakdown.get("hardware_compat", 5), breakdown.get("actionability", 3), text)
+
+    # Filter
+    candidates = [c for c in candidates if c["apex_score"] >= MIN_SCORE]
     candidates.sort(key=lambda x: x["apex_score"], reverse=True)
-    
-    report = f"# APEX WEEKLY ENGINEERING INTELLIGENCE | {datetime.date.today().isoformat()}\n\n"
-    
-    report += "## 1. Biggest Developments\n"
+    buckets = _categorize(candidates)
+
+    today = datetime.date.today().isoformat()
+    report = f"# APEX WEEKLY ENGINEERING INTELLIGENCE | {today}\n\n"
+
+    # --- Section 1: Top Discoveries ---
+    report += "## 1. Top Discoveries\n\n"
     for c in candidates[:5]:
         title = c.get("title", c.get("name"))
         url = c.get("link", c.get("html_url"))
-        report += f"- **{title}**: {url} (Score: {c['apex_score']:.1f})\n"
-        add_discovery(c.get("id", url), c["source_type"], title, url, c["apex_score"])
-        
-    report += "\n## 2. New Open-Source Projects\n"
-    for r in [c for c in candidates if c["source_type"] == "repo"][:5]:
-        report += f"- [{r['name']}]({r['html_url']}): {r['description'][:100]}\n"
-        
-    report += "\n## 3. Research Papers\n"
-    for p in [c for c in candidates if c["source_type"] == "paper"][:5]:
-        report += f"- [{p['title']}]({p['link']}): {p['summary'][:100]}...\n"
-        
-    report += "\n## 4. Hardware\n"
-    report += "*(Scanned from datasheets and manufacturer announcements)*\n"
-    
-    report += "\n## 5. Drones & Robotics\n"
-    report += "*(Derived from PX4/ROS2 activity)*\n"
-    
-    report += "\n## 6. AI + Hardware\n"
-    report += "*(Edge AI & TinyML updates)*\n"
-    
-    report += "\n## 7. Engineering Opportunities\n"
-    report += "- Existing Technology + Unresolved Problem = Potential Project\n"
-    
-    report += "\n## 8. What I Should Actually Build\n"
-    report += "*(Top 3 recommendations based on RTX 3050 / Pi / ESP32 inventory)*\n"
-    
-    report += "\n## 9. What I Should Learn\n"
-    report += "*(Core concepts to bridge knowledge gaps)*\n"
-    
-    report += "\n## 10. Content Opportunities\n"
-    report += "*(Technical carousels & social draft ideas)*\n"
-    
-    report += "\n## 11. Things to Ignore\n"
-    report += "*(Low-signal hype filtered out by APEX)*\n"
-    
-    report += "\n## 12. Watchlist\n"
-    report += "*(Projects to monitor for maturity)*\n"
-    
-    # Mark as reported
-    mark_reported([c.get("id", c.get("html_url")) for c in candidates[:10]])
-    
+        report += f"- **{title}** | Score: {c['apex_score']:.0f}/100 | Action: {c['action_class']}\n"
+        report += f"  {url}\n"
+        report += f"  {c.get('score_explanation', '').split(chr(10))[0]}\n\n"
+
+    # --- Section 2: Open-Source Projects ---
+    report += "## 2. New Open-Source Projects\n\n"
+    for r in buckets["open_source"][:5]:
+        report += f"- [{r.get('name', '?')}]({r.get('html_url', '')}) | {r.get('stars', 0)} stars | {r.get('language', '?')} | License: {r.get('license', '?')}\n"
+        report += f"  {r.get('description', '')[:120]}\n\n"
+    if not buckets["open_source"]:
+        report += "*No new high-signal repos this week.*\n\n"
+
+    # --- Section 3: Research Papers ---
+    report += "## 3. Research Papers\n\n"
+    for p in buckets["research"][:5]:
+        report += f"- **{p.get('title', '?')}**\n"
+        report += f"  {p.get('link', '')} | Keywords: {', '.join(p.get('matched_keywords', [])[:5])}\n"
+        report += f"  {p.get('summary', '')[:200]}...\n\n"
+    if not buckets["research"]:
+        report += "*No papers matched the relevance threshold this week.*\n\n"
+
+    # --- Section 4: Hardware / Electronics ---
+    report += "## 4. Electronics & Hardware\n\n"
+    for e in buckets["electronics"][:5]:
+        title = e.get("title", e.get("name"))
+        report += f"- **{title}** | Score: {e['apex_score']:.0f}/100\n"
+    if not buckets["electronics"]:
+        report += "*No high-signal electronics discoveries this week.*\n\n"
+
+    # --- Section 5: Drones & Robotics ---
+    report += "\n## 5. Drones & Robotics\n\n"
+    for d in buckets["drones"][:5]:
+        title = d.get("title", d.get("name"))
+        report += f"- **{title}** | Score: {d['apex_score']:.0f}/100 | Action: {d['action_class']}\n"
+    if not buckets["drones"]:
+        report += "*No drone/robotics discoveries crossed the threshold.*\n\n"
+
+    # --- Section 6: AI + Hardware ---
+    report += "\n## 6. AI + Hardware\n\n"
+    for a in buckets["ai_hardware"][:5]:
+        title = a.get("title", a.get("name"))
+        report += f"- **{title}** | Score: {a['apex_score']:.0f}/100\n"
+    if not buckets["ai_hardware"]:
+        report += "*No edge AI / TinyML discoveries this week.*\n\n"
+
+    # --- Section 7: Engineering Opportunities ---
+    report += "\n## 7. Engineering Opportunities\n\n"
+    build_now = [c for c in candidates if c["action_class"] == "BUILD NOW"]
+    build_add = [c for c in candidates if c["action_class"] == "BUILD WITH ADDITIONS"]
+    if build_now or build_add:
+        for b in (build_now + build_add)[:3]:
+            title = b.get("title", b.get("name"))
+            report += f"- **{title}**: {b.get('action_class')} — {b.get('score_explanation', '').split(chr(10))[0]}\n"
+    else:
+        report += "*No BUILD NOW opportunities this week. Check RESEARCH items for deeper dives.*\n"
+
+    # --- Section 8: What I Should Build ---
+    report += "\n## 8. What I Should Actually Build\n\n"
+    if build_now:
+        for b in build_now[:3]:
+            title = b.get("title", b.get("name"))
+            url = b.get("link", b.get("html_url"))
+            report += f"### {title}\n"
+            report += f"- **URL**: {url}\n"
+            report += f"- **Why**: {b.get('score_explanation', '').split(chr(10))[0]}\n"
+            report += f"- **Score**: {b['apex_score']:.0f}/100\n\n"
+    else:
+        report += "*No items scored high enough across actionability + hardware compatibility for immediate builds. Check Section 7 for near-ready items.*\n"
+
+    # --- Section 9: What I Should Learn ---
+    report += "\n## 9. What I Should Learn\n\n"
+    high_learning = sorted(candidates, key=lambda x: x.get("score_breakdown", {}).get("learning", 0), reverse=True)[:3]
+    for h in high_learning:
+        title = h.get("title", h.get("name"))
+        learn_score = h.get("score_breakdown", {}).get("learning", 0)
+        report += f"- **{title}** (Learning value: {learn_score:.1f}/10)\n"
+    if not high_learning:
+        report += "*No high-learning-value items this week.*\n"
+
+    # --- Section 10: Content Opportunities ---
+    report += "\n## 10. Content Opportunities\n\n"
+    for c in candidates[:3]:
+        title = c.get("title", c.get("name"))
+        report += f"- **{title}** — Could become a carousel/thread explaining the core technical idea.\n"
+
+    # --- Section 11: Things to Ignore ---
+    report += "\n## 11. Things to Ignore\n\n"
+    ignored = [c for c in candidates if c["action_class"] == "IGNORE"]
+    if ignored:
+        for i in ignored[:3]:
+            report += f"- {i.get('title', i.get('name'))}: Low signal. {i.get('score_explanation', '').split(chr(10))[0]}\n"
+    else:
+        report += "*Nothing was flagged as pure noise this week.*\n"
+
+    # --- Section 12: Watchlist ---
+    report += "\n## 12. Watchlist\n\n"
+    watched = [c for c in candidates if c["action_class"] == "WATCH"]
+    for w in watched[:5]:
+        title = w.get("title", w.get("name"))
+        report += f"- **{title}** | Score: {w['apex_score']:.0f}/100 — Promising but needs maturity.\n"
+    if not watched:
+        report += "*No items in watch status.*\n"
+
+    # --- BONUS: IF I ONLY HAVE 5 HOURS ---
+    report += "\n---\n\n## IF I ONLY HAVE 5 HOURS THIS WEEK\n\n"
+    top3 = candidates[:3]
+    for idx, t in enumerate(top3, 1):
+        title = t.get("title", t.get("name"))
+        url = t.get("link", t.get("html_url"))
+        report += f"{idx}. **{title}** — {t['action_class']}\n   {url}\n\n"
+    if not top3:
+        report += "*No actionable items this week.*\n"
+
+    # Persist
+    reported_ids = []
+    for c in candidates[:20]:
+        item_id = c.get("id", c.get("html_url", c.get("link", "")))
+        reported_ids.append(item_id)
+        add_discovery(
+            item_id=item_id,
+            source_type=c["source_type"],
+            title=c.get("title", c.get("name", "")),
+            url=c.get("link", c.get("html_url", "")),
+            apex_score=c["apex_score"],
+            source_tier=c.get("source_tier", 1),
+            categories=c.get("categories"),
+            summary=c.get("summary", c.get("description")),
+            score_breakdown=c.get("score_breakdown"),
+            score_explanation=c.get("score_explanation"),
+            action_class=c.get("action_class"),
+        )
+        if c.get("stars"):
+            add_trend_snapshot(item_id, c["stars"], c.get("forks", 0), c.get("open_issues", 0))
+
+    mark_reported(reported_ids)
     return report
