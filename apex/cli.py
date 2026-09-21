@@ -69,8 +69,13 @@ def scan(
             console.print("")
 
 
+from apex.reporting.telegram import send_telegram_message
+
 @app.command()
-def daily(limit: int = typer.Option(5, help="Number of items to report")):
+def daily(
+    limit: int = typer.Option(5, help="Number of items to report"),
+    telegram: bool = typer.Option(False, "--telegram", help="Send report to configured Telegram chat")
+):
     """Generates the high-signal daily intelligence digest (Section 11)."""
     console.print("\n[bold cyan][APEX] Running Daily Intelligence Scan...[/bold cyan]")
     papers = fetch_recent_papers(max_results=limit*2)
@@ -82,10 +87,19 @@ def daily(limit: int = typer.Option(5, help="Number of items to report")):
     out_path.write_text(report, encoding="utf-8")
     
     console.print(f"[bold green]✓ Daily Report saved to:[/bold green] {out_path.resolve()}")
+    
+    if telegram:
+        console.print("[bold cyan]Pushing newsletter to Telegram...[/bold cyan]")
+        if send_telegram_message(report):
+            console.print("[bold green]✓ Successfully sent to Telegram![/bold green]")
+        else:
+            console.print("[bold red]✗ Failed to send to Telegram. Check ~/.apex/profile.json[/bold red]")
 
 
 @app.command()
-def weekly():
+def weekly(
+    telegram: bool = typer.Option(False, "--telegram", help="Send report to configured Telegram chat")
+):
     """Generates the comprehensive weekly engineering intelligence report (Section 12)."""
     console.print("\n[bold cyan][APEX] Aggregating Weekly Intelligence...[/bold cyan]")
     papers = fetch_recent_papers(max_results=20)
@@ -97,6 +111,13 @@ def weekly():
     out_path.write_text(report, encoding="utf-8")
     
     console.print(f"[bold green]✓ Weekly Report saved to:[/bold green] {out_path.resolve()}")
+    
+    if telegram:
+        console.print("[bold cyan]Pushing newsletter to Telegram...[/bold cyan]")
+        if send_telegram_message(report):
+            console.print("[bold green]✓ Successfully sent to Telegram![/bold green]")
+        else:
+            console.print("[bold red]✗ Failed to send to Telegram. Check ~/.apex/profile.json[/bold red]")
 
 
 @app.command()

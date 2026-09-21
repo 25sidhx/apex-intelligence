@@ -64,3 +64,31 @@ calm-salk/
 ---
 
 *Engineered by Siddhant Rahate (`25sidhx`) · Autonomous Technology Intelligence*
+## 📰 Viewing the Newsletter & Telegram Notifications
+
+APEX v2.0 generates high-signal daily and weekly intelligence reports ("newsletters") with engineering translation (*"Why should I care?"*, *"Can I use it?"*).
+
+### Telegram Setup
+To get reports sent directly to your phone via Telegram:
+1. Message **@BotFather** on Telegram and create a new bot (/newbot).
+2. Copy the **Bot Token**.
+3. Send a message to your new bot.
+4. Go to https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates to find your chat_id.
+5. Add them to ~/.apex/profile.json:
+\\\json
+{
+  "hardware": { ... },
+  "telegram": {
+    "bot_token": "YOUR_BOT_TOKEN",
+    "chat_id": "YOUR_CHAT_ID"
+  }
+}
+\\\
+6. Run the reporter with the --telegram flag:
+   \\\ash
+   python -m apex.cli weekly --telegram
+   python -m apex.cli daily --telegram
+   \\\
+
+### GitHub Web View
+All reports are saved as Markdown in the \projects/\ directory. You can easily view them beautifully formatted on GitHub by navigating to this repository in your browser.
