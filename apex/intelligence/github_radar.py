@@ -1,12 +1,12 @@
 """
-GitHub Intelligence Radar v3:
-- Authenticated (5000 req/hour via token from ~/.apex/profile.json)
-- Stars filter (>10) to exclude zero-star noise
-- Two separate search strategies:
-    1. NEW repos (created in last 14 days) — genuine discovery
-    2. ACTIVE repos (pushed in last 7 days, >50 stars) — momentum tracking
-- Release monitoring for core embedded/drone stacks
-- HN Algolia as Tier 3 discovery
+GitHub Intelligence Radar v4:
+- Domain/concept-driven queries — NOT hardware brand locked
+- Discovers anything interesting across embedded, robotics, drones, AI hardware, FPGA, RF
+- Two passes: NEW repos (created last 14d) + ACTIVE repos (pushed last 7d)
+- Authenticated at 5000 req/hr via ~/.apex/profile.json token
+- Stars quality gate: >3 for new (age matters more than stars early on), >30 for trending
+- Release monitoring for core stacks
+- HN Algolia Tier 3 (>20 pts only)
 """
 
 import json
@@ -17,8 +17,11 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 
+# -------------------------------------------------------
+# Auth
+# -------------------------------------------------------
+
 def _load_token() -> Optional[str]:
-    """Loads GitHub token from ~/.apex/profile.json, falls back to gh CLI."""
     profile_path = Path.home() / ".apex" / "profile.json"
     if profile_path.exists():
         try:
@@ -28,8 +31,6 @@ def _load_token() -> Optional[str]:
                 return token
         except Exception:
             pass
-
-    # Fallback: ask gh CLI directly
     try:
         result = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, timeout=5)
         token = result.stdout.strip()
@@ -37,7 +38,6 @@ def _load_token() -> Optional[str]:
             return token
     except Exception:
         pass
-
     return None
 
 
@@ -50,28 +50,38 @@ def _make_headers() -> Dict[str, str]:
 
 
 # -------------------------------------------------------
-# Two discovery modes: NEW (recently created) and ACTIVE
+# Discovery queries — concept-driven, not brand-locked
 # -------------------------------------------------------
+# Format: (search query, description)
+# These are intentionally BROAD engineering concepts.
+# Quality gate (stars, date) handles signal vs noise.
 
-# Format: (search query, sort_by, description)
-# Using keyword search NOT topic — topics are user-assigned and sparse on new repos
-DISCOVERY_QUERIES = [
-    # NEW repos — only look at what was created in the last 14 days
-    ("esp32 OR esp-idf OR esp32s3", "created"),
-    ("stm32 OR stm32h7 OR stm32f4", "created"),
-    ("drone flight controller autonomous", "created"),
-    ("px4 mavlink ardupilot", "created"),
-    ("tinyml edge inference microcontroller", "created"),
-    ("fpga verilog vhdl accelerator", "created"),
-    ("risc-v riscv embedded", "created"),
-    ("slam visual odometry lidar", "created"),
-    ("ros2 gazebo robot navigation", "created"),
-    ("bldc motor control simplefoc", "created"),
-    ("kicad pcb schematic", "created"),
-    ("lora lorawan uwb iot sensor", "created"),
+NEW_REPO_QUERIES = [
+    # Each query covers a cluster of related concepts — keeps total requests under 15
+    ("autonomous robot navigation slam lidar",                 "Robotics & SLAM"),
+    ("flight controller autopilot firmware mavlink",           "Drones & autopilots"),
+    ("embedded firmware rtos freertos zephyr sensor",          "Embedded firmware & RTOS"),
+    ("motor control inverter bldc foc power electronics",      "Motor control & power"),
+    ("fpga verilog vhdl hdl accelerator",                      "FPGA & HDL"),
+    ("neural network inference edge embedded quantization",    "Edge AI & inference"),
+    ("pcb hardware schematic open source kicad",               "Open hardware & PCB"),
+    ("software defined radio sdr protocol wireless",           "RF & wireless"),
+    ("computer vision depth estimation stereo camera",         "Vision & depth"),
+    ("risc processor cpu open source silicon",                 "Open silicon"),
+    ("battery management bms energy harvesting power",         "Power & BMS"),
+    ("simulation gazebo physics robot environment",            "Simulation"),
+    ("debugger probe jtag openocd trace",                      "Debug tools"),
+    ("swarm multi-robot cooperative planning",                 "Swarm systems"),
 ]
 
-# Key repos to monitor for new releases
+TRENDING_QUERIES = [
+    ("autonomous robot embedded firmware hardware",            "Autonomous systems"),
+    ("edge ai inference neural embedded fpga",                 "Edge AI & FPGA"),
+    ("drone uav slam navigation control",                      "Drones & navigation"),
+    ("motor wireless sensor power open-source",                "Hardware ecosystem"),
+]
+
+# Core ecosystem repos — watch these for releases
 MONITORED_REPOS = [
     "PX4/PX4-Autopilot",
     "ArduPilot/ardupilot",
@@ -79,48 +89,65 @@ MONITORED_REPOS = [
     "espressif/esp-idf",
     "espressif/arduino-esp32",
     "espressif/esp-matter",
+    "zephyrproject-rtos/zephyr",
     "SimpleFOC/Arduino-FOC",
     "betaflight/betaflight",
     "KiCad/kicad-source-mirror",
     "openpilot/openpilot",
     "qgroundcontrol/qgroundcontrol",
     "micro-ROS/micro_ros_arduino",
+    "openocd-org/openocd",
+    "gnuradio/gnuradio",
+    "riscv/riscv-isa-manual",
+    "tinygrad/tinygrad",
 ]
+
+
+# -------------------------------------------------------
+# Core search
+# -------------------------------------------------------
+
+def _rate_limit_ok(resp: requests.Response) -> bool:
+    remaining = int(resp.headers.get("X-RateLimit-Remaining", 100))
+    if remaining < 10:
+        print(f"[!] GitHub rate limit low ({remaining} remaining). Pausing queries.")
+        return False
+    return True
+
+
+def _keywords_to_query(keyword_str: str) -> str:
+    """
+    Converts a space-separated keyword string into GitHub OR-syntax.
+    'drone uav slam' -> 'drone+OR+uav+OR+slam'
+    """
+    words = [w.strip() for w in keyword_str.split() if w.strip()]
+    return "+OR+".join(words)
 
 
 def _search_repos(
     keyword: str,
     sort: str = "created",
-    min_stars: int = 5,
+    min_stars: int = 2,
     days_window: int = 14,
-    per_page: int = 10,
+    per_page: int = 8,
 ) -> List[Dict[str, Any]]:
-    """
-    Searches GitHub for repos matching keyword.
-    sort = 'created' finds genuinely new repos.
-    sort = 'updated' finds recently active repos.
-    """
     cutoff = (datetime.now() - timedelta(days=days_window)).strftime("%Y-%m-%d")
+    date_filter = f"created:>{cutoff}" if sort == "created" else f"pushed:>{cutoff}"
 
-    if sort == "created":
-        date_filter = f"created:>{cutoff}"
-    else:
-        date_filter = f"pushed:>{cutoff}"
-
-    q = f"{keyword}+{date_filter}+stars:>{min_stars}+fork:false"
+    kw_query = _keywords_to_query(keyword)
+    q = f"{kw_query}+{date_filter}+stars:>{min_stars}+fork:false"
     url = f"https://api.github.com/search/repositories?q={q}&sort={sort}&order=desc&per_page={per_page}"
 
     try:
         resp = requests.get(url, headers=_make_headers(), timeout=12)
-        remaining = int(resp.headers.get("X-RateLimit-Remaining", 0))
-        if resp.status_code == 403 or remaining < 5:
-            print(f"[!] GitHub rate limit low ({remaining} remaining). Stopping search early.")
+        if resp.status_code == 403:
+            return []
+        if not _rate_limit_ok(resp):
             return []
         if resp.status_code != 200:
             return []
         data = resp.json()
     except Exception as e:
-        print(f"[!] GitHub search failed: {e}")
         return []
 
     repos = []
@@ -141,53 +168,46 @@ def _search_repos(
             "is_fork": item.get("fork", False),
             "source_type": "repo",
             "source_tier": 1,
-            "search_category": keyword[:40],
         })
 
     return repos
 
 
-def fetch_new_repos(max_results: int = 20) -> List[Dict[str, Any]]:
+# -------------------------------------------------------
+# Public API
+# -------------------------------------------------------
+
+def fetch_new_repos(max_results: int = 25) -> List[Dict[str, Any]]:
     """
-    Discovers genuinely NEW repos (created last 14 days) across all tracked domains.
-    Deduplicates by full name. Quality filter: >5 stars.
+    Discovers genuinely NEW repos (created last 14 days) across all engineering domains.
+    Deduplicates by full name. No brand-locking — concept-driven queries only.
     """
     seen: Dict[str, Dict] = {}
 
-    for keyword, sort in DISCOVERY_QUERIES:
-        per_q = max(max_results // len(DISCOVERY_QUERIES), 3)
-        results = _search_repos(keyword, sort=sort, min_stars=5, days_window=14, per_page=per_q)
+    for keyword, _ in NEW_REPO_QUERIES:
+        per_q = max(max_results // len(NEW_REPO_QUERIES), 3)
+        results = _search_repos(keyword, sort="created", min_stars=3, days_window=14, per_page=per_q)
         for r in results:
             name = r["name"]
             if name not in seen:
                 seen[name] = r
 
     repos = list(seen.values())
-    # Sort: newest first (creation date)
+    # Sort: newest first
     repos.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     return repos[:max_results]
 
 
-def fetch_trending_repos(max_results: int = 15) -> List[Dict[str, Any]]:
+def fetch_trending_repos(max_results: int = 20) -> List[Dict[str, Any]]:
     """
-    Finds established repos with recent activity (pushed last 7 days, >50 stars).
-    These are active maintained projects worth tracking.
+    Finds established repos (>30 stars) with heavy recent activity (pushed last 7 days).
+    Broader concepts — not limited to specific hardware.
     """
     seen: Dict[str, Dict] = {}
 
-    # Broader combined queries for trending (less specific than discovery)
-    trending_queries = [
-        ("drone uav autonomous navigation", "updated"),
-        ("embedded firmware microcontroller", "updated"),
-        ("esp32 esp-idf iot", "updated"),
-        ("tinyml edge ai inference embedded", "updated"),
-        ("fpga verilog hardware accelerator", "updated"),
-        ("slam robotics ros2 lidar", "updated"),
-    ]
-
-    for keyword, sort in trending_queries:
-        per_q = max(max_results // len(trending_queries), 3)
-        results = _search_repos(keyword, sort=sort, min_stars=50, days_window=7, per_page=per_q)
+    for keyword, _ in TRENDING_QUERIES:
+        per_q = max(max_results // len(TRENDING_QUERIES), 3)
+        results = _search_repos(keyword, sort="updated", min_stars=30, days_window=7, per_page=per_q)
         for r in results:
             name = r["name"]
             if name not in seen:
@@ -200,7 +220,7 @@ def fetch_trending_repos(max_results: int = 15) -> List[Dict[str, Any]]:
 
 def fetch_releases(days: int = 7) -> List[Dict[str, Any]]:
     """
-    Checks monitored ecosystem repos for releases in the last N days.
+    Checks monitored ecosystem repos for releases within last N days.
     """
     cutoff = datetime.now() - timedelta(days=days)
     releases = []
@@ -213,12 +233,10 @@ def fetch_releases(days: int = 7) -> List[Dict[str, Any]]:
                 continue
             for rel in resp.json():
                 published = rel.get("published_at", "")
-                # Only include releases within the time window
                 if published:
                     pub_dt = datetime.strptime(published[:10], "%Y-%m-%d")
                     if pub_dt < cutoff:
                         continue
-
                 releases.append({
                     "name": f"{repo} — {rel.get('tag_name', '')}",
                     "title": rel.get("name") or rel.get("tag_name", ""),
@@ -230,7 +248,6 @@ def fetch_releases(days: int = 7) -> List[Dict[str, Any]]:
                     "tag": rel.get("tag_name", ""),
                     "source_type": "release",
                     "source_tier": 1,
-                    # Treat as high-interest items for known stacks
                     "stars": 9999,
                 })
         except Exception:
@@ -241,15 +258,14 @@ def fetch_releases(days: int = 7) -> List[Dict[str, Any]]:
 
 def fetch_hn_stories(max_results: int = 10) -> List[Dict[str, Any]]:
     """
-    Hacker News Algolia — Tier 3 discovery only.
-    High-engagement HN discussion threads pointing to new open-source tools.
+    HN Algolia — Tier 3, >20 points only. Broad engineering topics.
     """
     queries = [
-        "drone autonomous embedded",
-        "esp32 microcontroller",
-        "tinyml edge inference",
-        "fpga risc-v open source",
-        "ros2 robotics slam",
+        "embedded systems firmware",
+        "autonomous robot drone",
+        "edge inference hardware",
+        "fpga open source silicon",
+        "motor control power electronics",
     ]
     stories = []
     per_q = max(max_results // len(queries), 2)
@@ -261,7 +277,6 @@ def fetch_hn_stories(max_results: int = 10) -> List[Dict[str, Any]]:
             if resp.status_code != 200:
                 continue
             for hit in resp.json().get("hits", []):
-                # Skip low-engagement posts
                 if (hit.get("points") or 0) < 20:
                     continue
                 stories.append({
