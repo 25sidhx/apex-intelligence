@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from apex.intelligence.arxiv_radar import fetch_recent_papers
-from apex.intelligence.github_radar import fetch_trending_repos
+from apex.intelligence.github_radar import fetch_new_repos, fetch_trending_repos, fetch_releases
 from apex.engineering.scaffolds import scaffold_project, TEMPLATES
 from apex.content.humanizer import audit_text, clean_text
 from apex.utils.context_filter import filter_compiler_output
@@ -50,23 +50,27 @@ def scan(
         console.print("")
 
     if category in ["all", "github"]:
-        repos = fetch_trending_repos(max_results=limit)
-        if repos:
-            table = Table(title="[bold green]Active Open-Source Projects (GitHub)[/bold green]", show_lines=True)
-            table.add_column("Stars", justify="center", style="bold yellow", width=8)
-            table.add_column("Repo", style="bold white")
-            table.add_column("Description", style="dim")
-            table.add_column("URL", style="blue")
+        console.print("[bold cyan]Fetching NEW repos (created last 14 days)...[/bold cyan]")
+        new_repos = fetch_new_repos(max_results=limit)
+        releases = fetch_releases(days=7)
 
-            for r in repos:
-                table.add_row(
-                    str(r['stars']),
-                    r['name'],
-                    r['description'][:80] + "..." if len(r['description']) > 80 else r['description'],
-                    r['html_url']
-                )
+        if new_repos:
+            table = Table(title="[bold green]NEW Open-Source Repos (last 14 days)[/bold green]", show_lines=True)
+            table.add_column("Stars", justify="center", style="bold yellow", width=7)
+            table.add_column("Repo", style="bold white")
+            table.add_column("Language", style="magenta", width=10)
+            table.add_column("Description", style="dim")
+
+            for r in new_repos:
+                desc = r['description'][:70] + "..." if len(r['description']) > 70 else r['description']
+                table.add_row(str(r['stars']), r['name'], r['language'], desc)
             console.print(table)
-            console.print("")
+
+        if releases:
+            console.print("\n[bold green]Recent Releases from Core Stacks:[/bold green]")
+            for rel in releases:
+                console.print(f"  [cyan]{rel['repo']}[/cyan] — {rel['tag']} ({rel['published_at'][:10]})")
+        console.print("")
 
 
 from apex.reporting.telegram import send_telegram_message
@@ -76,18 +80,21 @@ def daily(
     limit: int = typer.Option(5, help="Number of items to report"),
     telegram: bool = typer.Option(False, "--telegram", help="Send report to configured Telegram chat")
 ):
-    """Generates the high-signal daily intelligence digest (Section 11)."""
+    """Generates the high-signal daily intelligence digest."""
     console.print("\n[bold cyan][APEX] Running Daily Intelligence Scan...[/bold cyan]")
-    papers = fetch_recent_papers(max_results=limit*2)
-    repos = fetch_trending_repos(max_results=limit*2)
-    report = generate_daily_report(papers, repos, limit=limit)
-    
+    papers = fetch_recent_papers(max_results=limit * 3)
+    new_repos = fetch_new_repos(max_results=limit * 2)
+    trending = fetch_trending_repos(max_results=limit)
+    releases = fetch_releases(days=3)
+    all_repos = new_repos + trending + releases
+    report = generate_daily_report(papers, all_repos, limit=limit)
+
     out_path = Path(f"projects/daily_report_{datetime.date.today().isoformat()}.md")
     out_path.parent.mkdir(exist_ok=True)
     out_path.write_text(report, encoding="utf-8")
-    
+
     console.print(f"[bold green]✓ Daily Report saved to:[/bold green] {out_path.resolve()}")
-    
+
     if telegram:
         console.print("[bold cyan]Pushing newsletter to Telegram...[/bold cyan]")
         if send_telegram_message(report):
@@ -100,11 +107,14 @@ def daily(
 def weekly(
     telegram: bool = typer.Option(False, "--telegram", help="Send report to configured Telegram chat")
 ):
-    """Generates the comprehensive weekly engineering intelligence report (Section 12)."""
+    """Generates the comprehensive weekly engineering intelligence report."""
     console.print("\n[bold cyan][APEX] Aggregating Weekly Intelligence...[/bold cyan]")
-    papers = fetch_recent_papers(max_results=20)
-    repos = fetch_trending_repos(max_results=20)
-    report = generate_weekly_report(papers, repos)
+    papers = fetch_recent_papers(max_results=30)
+    new_repos = fetch_new_repos(max_results=20)
+    trending = fetch_trending_repos(max_results=15)
+    releases = fetch_releases(days=7)
+    all_repos = new_repos + trending + releases
+    report = generate_weekly_report(papers, all_repos)
     
     out_path = Path(f"projects/weekly_report_{datetime.date.today().isoformat()}.md")
     out_path.parent.mkdir(exist_ok=True)
