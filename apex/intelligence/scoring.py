@@ -87,25 +87,55 @@ DOMAIN_OPEN_SOURCE = {
     "sdk", "api", "driver", "firmware",
 }
 
-# Things that signal LOW value
-NOISE_SIGNALS = {
-    "awesome list", "awesome-list", "curated list", "collection of",
-    "web development", "javascript framework", "react component",
-    "social media", "marketing", "seo", "cryptocurrency", "blockchain",
-    "nft", "metaverse", "web3",
+# Pure software AI — LLM wrappers, chatbot apps, prompt engineering, no hardware.
+# These score zero relevance to embedded/hardware work.
+# NOTE: "neural network", "inference", "computer vision" are NOT here — those are in DOMAIN_AI_HARDWARE
+# because they're relevant when deployed ON hardware. These are pure-software-only terms.
+LLM_SLOP = {
+    "chatgpt wrapper", "gpt-4 api", "openai api wrapper", "langchain app",
+    "prompt engineering", "rag pipeline", "llm chatbot", "ai chatbot",
+    "ai writing", "ai content generation", "text generation app",
+    "fine-tuning gpt", "gpt integration", "claude api", "gemini api",
+    "llm agent", "ai agent framework", "conversational ai",
 }
 
-# Things that signal HYPE without substance
+# Generic non-engineering noise — web dev, marketing, finance
+NOISE_SIGNALS = {
+    "awesome list", "awesome-list", "curated list", "collection of links",
+    "web development", "javascript framework", "react component", "vue component",
+    "social media marketing", "seo tool", "cryptocurrency", "blockchain",
+    "nft", "metaverse", "web3", "defi", "token", "smart contract",
+    "e-commerce", "wordpress plugin", "shopify", "saas landing page",
+}
+
+# Hype words with zero engineering specifics
 HYPE_SIGNALS = {
     "revolutionary", "game-changer", "disrupting", "paradigm shift",
-    "unlimited potential", "next generation", "world-changing",
+    "unlimited potential", "next generation ai", "world-changing",
+    "transform the industry", "10x faster",
 }
 
-# Hardware that exceeds student capability
+# Hardware out of student reach
 HEAVY_HARDWARE = {
     "h100", "a100", "v100", "dgx", "tpu v4", "tpu v5",
     "64gb vram", "128gb ram", "8x gpu", "hpc cluster",
     "fabrication", "tape-out", "asic design",
+}
+
+# Keywords that indicate a project is DEMO-READY for events/clubs
+# Used to populate the VP Demo Corner section
+DEMO_SIGNALS = {
+    "robot arm", "wheeled robot", "line follower", "obstacle avoidance",
+    "led matrix", "led strip", "oled display", "lcd display",
+    "gesture control", "voice control", "rc car", "rc plane",
+    "autonomous car", "self-driving", "balancing robot", "biped",
+    "swarm demo", "formation flight", "drone light show",
+    "object tracking", "face detection", "hand gesture",
+    "joystick", "gamepad", "remote control",
+    "real-time", "live demo", "visual", "camera", "stream",
+    "open hardware", "open-source hardware", "oshw",
+    "arduino", "raspberry pi", "simple", "beginner",
+    "breadboard", "solderless", "plug and play",
 }
 
 
@@ -152,11 +182,21 @@ def calculate_apex_score(item: Dict[str, Any]) -> Tuple[float, Dict[str, float],
         relevance = 1.0
         reasons_minus.append("No match to primary engineering domains")
 
-    # Noise penalty
+    # LLM slop early kill — pure software AI, no hardware relevance at all
+    slop_hits = _count_domain_matches(text, LLM_SLOP)
+    if slop_hits >= 2:
+        # Hard kill — this is a ChatGPT wrapper or LLM app, not engineering
+        reasons_minus.append(f"LLM/chatbot software — no hardware relevance ({slop_hits} slop signals)")
+        relevance = 0.0
+    elif slop_hits == 1 and total_domain == 0:
+        relevance = max(relevance - 3, 0)
+        reasons_minus.append("Likely LLM-adjacent software with no embedded content")
+
+    # Generic noise penalty (web dev, marketing, etc.)
     noise = _count_domain_matches(text, NOISE_SIGNALS)
     if noise > 0:
-        relevance = max(relevance - noise * 2, 0)
-        reasons_minus.append(f"Contains noise signals ({noise} matches)")
+        relevance = max(relevance - noise * 1.5, 0)
+        reasons_minus.append(f"Contains off-topic noise ({noise} matches)")
 
     # --- 2. NOVELTY (0-10) ---
     novelty = 5.0  # Default: unknown

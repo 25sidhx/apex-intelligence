@@ -226,7 +226,8 @@ class TestReports:
     def test_daily_report_filters_low_scores(self):
         from apex.reporting.daily import generate_daily_report
         report = generate_daily_report([IRRELEVANT_PAPER], [], limit=5)
-        assert "Social Media" not in report or "quality threshold" in report.lower() or "No discoveries" in report
+        # Irrelevant paper has no domain match + noise signals — scorer kills it below threshold
+        assert "Social Media" not in report or "No discoveries" in report
 
     def test_daily_report_includes_high_scores(self):
         from apex.reporting.daily import generate_daily_report
@@ -238,7 +239,8 @@ class TestReports:
         report = generate_weekly_report([DRONE_PAPER], [ACTIVE_REPO])
         for section in ["Top Discoveries", "Open-Source", "Research Papers", "Electronics", "Drones", "AI + Hardware",
                         "Engineering Opportunities", "What I Should Actually Build", "What I Should Learn",
-                        "Content Opportunities", "Things to Ignore", "Watchlist", "IF I ONLY HAVE 5 HOURS"]:
+                        "Content Opportunities", "Things to Ignore", "Watchlist",
+                        "VP DEMO CORNER", "IF I ONLY HAVE 5 HOURS"]:
             assert section in report, f"Weekly report missing section: {section}"
 
     def test_weekly_no_placeholder_text(self):

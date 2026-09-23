@@ -9,7 +9,7 @@ from apex.memory.store import add_discovery, is_duplicate, is_similar_title, mar
 import datetime
 
 
-MIN_SCORE_THRESHOLD = 25.0  # Out of 100. Below this: not reported.
+MIN_SCORE_THRESHOLD = 18.0  # Out of 100. Aggressive enough to kill LLM slop, loose enough for real projects.
 
 
 def _format_item(idx: int, item: Dict[str, Any]) -> str:

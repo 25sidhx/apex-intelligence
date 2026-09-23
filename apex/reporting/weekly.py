@@ -1,15 +1,15 @@
 """
 APEX Weekly Intelligence Report Generator v2.
-All 12 sections populated from scored data. No placeholders.
+All sections populated from scored data. No placeholders. No AI slop.
 """
 
 from typing import List, Dict, Any
-from apex.intelligence.scoring import calculate_apex_score, classify_action
+from apex.intelligence.scoring import calculate_apex_score, classify_action, DEMO_SIGNALS, _count_domain_matches
 from apex.memory.store import add_discovery, is_duplicate, is_similar_title, mark_reported, add_trend_snapshot
 import datetime
 
 
-MIN_SCORE = 20.0
+MIN_SCORE = 12.0  # Lower threshold — scorer handles the noise, not the gate
 
 
 def _categorize(items: List[Dict]) -> Dict[str, List[Dict]]:
@@ -185,6 +185,65 @@ def generate_weekly_report(papers: List[Dict[str, Any]], repos: List[Dict[str, A
         report += f"- **{title}** | Score: {w['apex_score']:.0f}/100 — Promising but needs maturity.\n"
     if not watched:
         report += "*No items in watch status.*\n"
+
+    # --- VP DEMO CORNER ---
+    report += "\n---\n\n## VP DEMO CORNER — Build This for Your Club\n"
+    report += "> Open-source projects you can replicate, demo at events, or use as a foundation for club showcases.\n\n"
+
+    # Find demo-ready candidates: open source repos + action BUILD NOW or BUILD WITH ADDITIONS
+    # + has demo signals (visually impressive, physical, interactive)
+    demo_candidates = []
+    for c in candidates:
+        if c.get("source_type") not in ("repo", "release"):
+            continue
+        if c.get("action_class") not in ("BUILD NOW", "BUILD WITH ADDITIONS"):
+            continue
+        text = " ".join([
+            str(c.get("title", "")), str(c.get("name", "")),
+            str(c.get("description", "")), str(c.get("summary", ""))
+        ]).lower()
+        demo_hits = _count_domain_matches(text, DEMO_SIGNALS)
+        if demo_hits >= 2:
+            c["_demo_score"] = demo_hits
+            demo_candidates.append(c)
+
+    demo_candidates.sort(key=lambda x: x.get("_demo_score", 0), reverse=True)
+
+    if demo_candidates:
+        for demo in demo_candidates[:5]:
+            title = demo.get("name", demo.get("title", "?"))
+            url = demo.get("html_url", demo.get("link", ""))
+            stars = demo.get("stars", 0)
+            lang = demo.get("language", "")
+            desc = demo.get("description", "")[:180]
+            apex = demo.get("apex_score", 0)
+
+            report += f"### {title}\n"
+            report += f"- **Repo**: {url}\n"
+            if stars:
+                report += f"- **Stars**: {stars} | **Language**: {lang}\n"
+            report += f"- **APEX Score**: {apex:.0f}/100\n"
+            report += f"- **What it is**: {desc}\n"
+            report += f"- **Why demo it**: Matches {demo.get('_demo_score', 0)} demo/event signals. "
+            report += "Physically demonstrable, open hardware, or interactive — good for club event or show.\n"
+            if demo.get("action_class") == "BUILD NOW":
+                report += "- **Effort**: Should work on your current hardware with minimal additions.\n"
+            else:
+                report += "- **Effort**: May need small hardware additions — check the repo README.\n"
+            report += "\n"
+    else:
+        # Fallback: show any BUILD NOW/WITH ADDITIONS repos even without explicit demo signals
+        fallback = [c for c in candidates
+                    if c.get("source_type") in ("repo", "release")
+                    and c.get("action_class") in ("BUILD NOW", "BUILD WITH ADDITIONS")][:3]
+        if fallback:
+            for f in fallback:
+                title = f.get("name", f.get("title", "?"))
+                url = f.get("html_url", f.get("link", ""))
+                desc = f.get("description", "")[:150]
+                report += f"- **{title}**: {url}\n  {desc}\n\n"
+        else:
+            report += "*No demo-ready open-source projects found this week. All hardware repos needed too many additions.*\n"
 
     # --- BONUS: IF I ONLY HAVE 5 HOURS ---
     report += "\n---\n\n## IF I ONLY HAVE 5 HOURS THIS WEEK\n\n"
