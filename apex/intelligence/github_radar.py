@@ -53,32 +53,30 @@ def _make_headers() -> Dict[str, str]:
 # Discovery queries — concept-driven, not brand-locked
 # -------------------------------------------------------
 # Format: (search query, description)
-# These are intentionally BROAD engineering concepts.
-# Quality gate (stars, date) handles signal vs noise.
+# BUDGET: 30 search requests per minute (authenticated).
+# 10 NEW + 4 TRENDING + ~17 release checks = ~31. Safe margin.
+# Demo queries are FIRST — they populate VP Demo Corner.
 
 NEW_REPO_QUERIES = [
-    # Each query covers a cluster of related concepts — keeps total requests under 15
-    ("autonomous robot navigation slam lidar",                 "Robotics & SLAM"),
-    ("flight controller autopilot firmware mavlink",           "Drones & autopilots"),
-    ("embedded firmware rtos freertos zephyr sensor",          "Embedded firmware & RTOS"),
-    ("motor control inverter bldc foc power electronics",      "Motor control & power"),
-    ("fpga verilog vhdl hdl accelerator",                      "FPGA & HDL"),
-    ("neural network inference edge embedded quantization",    "Edge AI & inference"),
-    ("pcb hardware schematic open source kicad",               "Open hardware & PCB"),
-    ("software defined radio sdr protocol wireless",           "RF & wireless"),
-    ("computer vision depth estimation stereo camera",         "Vision & depth"),
-    ("risc processor cpu open source silicon",                 "Open silicon"),
-    ("battery management bms energy harvesting power",         "Power & BMS"),
-    ("simulation gazebo physics robot environment",            "Simulation"),
-    ("debugger probe jtag openocd trace",                      "Debug tools"),
-    ("swarm multi-robot cooperative planning",                 "Swarm systems"),
+    # Demo-ready projects (VP Demo Corner) — run FIRST so rate limit doesn't kill them
+    ("robot arm servo obstacle avoidance line follower",        "Demo: robot builds"),
+    ("fpv drone racing swarm balancing robot",                 "Demo: drone & club"),
+    ("led matrix oled display gesture control face detection",  "Demo: interactive"),
+    # Core engineering domains
+    ("autonomous robot slam lidar navigation control",         "Robotics & SLAM"),
+    ("flight controller autopilot firmware mavlink px4",       "Drones & autopilots"),
+    ("embedded firmware rtos freertos zephyr sensor",          "Embedded firmware"),
+    ("motor control bldc foc inverter power electronics",      "Motor control & power"),
+    ("fpga verilog vhdl risc-v accelerator open silicon",      "FPGA & open silicon"),
+    ("edge inference quantization tinyml camera detection",    "Edge AI & vision"),
+    ("pcb kicad schematic sdr wireless open hardware",         "Open hardware & RF"),
 ]
 
 TRENDING_QUERIES = [
-    ("autonomous robot embedded firmware hardware",            "Autonomous systems"),
-    ("edge ai inference neural embedded fpga",                 "Edge AI & FPGA"),
-    ("drone uav slam navigation control",                      "Drones & navigation"),
-    ("motor wireless sensor power open-source",                "Hardware ecosystem"),
+    ("autonomous robot embedded drone firmware",               "Autonomous & embedded"),
+    ("edge ai inference fpga neural accelerator",             "Edge AI & FPGA"),
+    ("servo motor arduino sensor camera raspberry",            "Maker & hardware"),
+    ("slam navigation lidar swarm control",                    "Navigation & swarm"),
 ]
 
 # Core ecosystem repos — watch these for releases

@@ -4,7 +4,7 @@ High-signal daily digest with engineering translation and quality gates.
 """
 
 from typing import List, Dict, Any
-from apex.intelligence.scoring import calculate_apex_score, classify_action
+from apex.intelligence.scoring import calculate_apex_score, classify_action, DEMO_SIGNALS, _count_domain_matches
 from apex.memory.store import add_discovery, is_duplicate, is_similar_title, mark_reported, add_trend_snapshot
 import datetime
 
@@ -142,4 +142,40 @@ def generate_daily_report(papers: List[Dict[str, Any]], repos: List[Dict[str, An
             add_trend_snapshot(item_id, item["stars"], item.get("forks", 0), item.get("open_issues", 0))
 
     mark_reported(reported_ids)
+
+    # --- VP DEMO CORNER (scans ALL candidates, not just top N) ---
+    demo_candidates = []
+    for c in candidates:
+        if c.get("source_type") not in ("repo", "release"):
+            continue
+        text = " ".join([
+            str(c.get("title", "")), str(c.get("name", "")),
+            str(c.get("description", "")), str(c.get("summary", ""))
+        ]).lower()
+        demo_hits = _count_domain_matches(text, DEMO_SIGNALS)
+        if demo_hits >= 2:
+            c["_demo_score"] = demo_hits
+            demo_candidates.append(c)
+
+    demo_candidates.sort(key=lambda x: x.get("_demo_score", 0), reverse=True)
+
+    if demo_candidates:
+        report += "\n---\n\n## VP DEMO CORNER — Build This for Your Club\n\n"
+        for d in demo_candidates[:4]:
+            title = d.get("name", d.get("title", "?"))
+            url = d.get("html_url", d.get("link", ""))
+            stars = d.get("stars", 0)
+            lang = d.get("language", "")
+            desc = d.get("description", "")[:200]
+            apex = d.get("apex_score", 0)
+            action = d.get("action_class", "?")
+
+            report += f"### {title}\n"
+            report += f"- **Link**: {url}\n"
+            if stars and stars != 9999:
+                report += f"- **Stars**: {stars} | **Language**: {lang}\n"
+            report += f"- **Score**: {apex:.0f}/100 | **Action**: {action}\n"
+            report += f"- **What**: {desc}\n"
+            report += f"- **Demo signals**: {d.get('_demo_score', 0)} matches — good for club events/shows\n\n"
+
     return report
