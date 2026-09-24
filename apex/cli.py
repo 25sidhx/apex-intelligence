@@ -16,6 +16,31 @@ from apex.utils.context_filter import filter_compiler_output
 from apex.utils.worktree_mgr import WorktreeManager
 from apex.reporting.daily import generate_daily_report
 from apex.reporting.weekly import generate_weekly_report
+import subprocess
+
+
+def _auto_publish(report_path: Path, report_type: str = "weekly"):
+    """Git add, commit, and push the report so it appears on GitHub automatically."""
+    try:
+        repo_root = Path(__file__).resolve().parent.parent
+        subprocess.run(
+            ["git", "add", str(report_path)],
+            cwd=str(repo_root), capture_output=True, text=True, timeout=10
+        )
+        msg = f"report({report_type}): {report_path.name}"
+        result = subprocess.run(
+            ["git", "commit", "-m", msg],
+            cwd=str(repo_root), capture_output=True, text=True, timeout=10
+        )
+        if result.returncode != 0:
+            return False
+        push = subprocess.run(
+            ["git", "push", "origin", "master"],
+            cwd=str(repo_root), capture_output=True, text=True, timeout=30
+        )
+        return push.returncode == 0
+    except Exception:
+        return False
 
 app = typer.Typer(help="APEX: Autonomous Tech Intelligence & Embedded Engineering System")
 console = Console(safe_box=True)
@@ -95,6 +120,11 @@ def daily(
 
     console.print(f"[bold green]✓ Daily Report saved to:[/bold green] {out_path.resolve()}")
 
+    if _auto_publish(out_path, "daily"):
+        console.print("[bold green]✓ Published to GitHub.[/bold green]")
+    else:
+        console.print("[dim]Auto-publish skipped (no changes or git error).[/dim]")
+
     if telegram:
         console.print("[bold cyan]Pushing newsletter to Telegram...[/bold cyan]")
         if send_telegram_message(report):
@@ -121,7 +151,12 @@ def weekly(
     out_path.write_text(report, encoding="utf-8")
     
     console.print(f"[bold green]✓ Weekly Report saved to:[/bold green] {out_path.resolve()}")
-    
+
+    if _auto_publish(out_path, "weekly"):
+        console.print("[bold green]✓ Published to GitHub.[/bold green]")
+    else:
+        console.print("[dim]Auto-publish skipped (no changes or git error).[/dim]")
+
     if telegram:
         console.print("[bold cyan]Pushing newsletter to Telegram...[/bold cyan]")
         if send_telegram_message(report):

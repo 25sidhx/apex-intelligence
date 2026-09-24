@@ -125,17 +125,35 @@ HEAVY_HARDWARE = {
 # Keywords that indicate a project is DEMO-READY for events/clubs
 # Used to populate the VP Demo Corner section
 DEMO_SIGNALS = {
+    # Physical robots & movement
     "robot arm", "wheeled robot", "line follower", "obstacle avoidance",
+    "balancing robot", "biped", "autonomous car", "self-driving",
+    "rc car", "rc plane", "sumo robot", "maze solver", "pick and place",
+    "servo", "actuator", "gripper", "teleoperation", "teleop",
+
+    # Drones & aerial
+    "swarm", "swarm drone", "swarm demo", "formation flight", "drone light show",
+    "fpv", "fpv drone", "fpv racing", "racing drone", "delivery drone",
+    "payload", "aerial photography", "gimbal", "fixed wing", "vtol",
+    "autonomous landing", "precision landing",
+
+    # Display & visual
     "led matrix", "led strip", "oled display", "lcd display",
-    "gesture control", "voice control", "rc car", "rc plane",
-    "autonomous car", "self-driving", "balancing robot", "biped",
-    "swarm demo", "formation flight", "drone light show",
-    "object tracking", "face detection", "hand gesture",
+    "visual", "stream", "camera", "live demo",
+
+    # Human interaction / control
+    "gesture control", "hand gesture", "voice control",
     "joystick", "gamepad", "remote control",
-    "real-time", "live demo", "visual", "camera", "stream",
+
+    # CV demos
+    "object tracking", "face detection", "real-time",
+    "person detection", "pose estimation", "depth camera",
+
+    # Open / beginner hardware
     "open hardware", "open-source hardware", "oshw",
     "arduino", "raspberry pi", "simple", "beginner",
     "breadboard", "solderless", "plug and play",
+    "competition", "hackathon", "workshop", "event",
 }
 
 
