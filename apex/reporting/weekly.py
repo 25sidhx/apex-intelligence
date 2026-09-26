@@ -44,14 +44,19 @@ def _categorize(items: List[Dict]) -> Dict[str, List[Dict]]:
         if item.get("source_type") == "repo":
             buckets["open_source"].append(item)
             placed = True
+        if item.get("source_type") in ("blog", "forum", "video"):
+            buckets["hardware_news"].append(item)
+            placed = True
 
     return buckets
 
 
-def generate_weekly_report(papers: List[Dict[str, Any]], repos: List[Dict[str, Any]]) -> str:
+def generate_weekly_report(papers: List[Dict[str, Any]], repos: List[Dict[str, Any]], others: List[Dict[str, Any]] = None) -> str:
     """Generates 12-section weekly report with real data in every section."""
 
     candidates = []
+    others = others or []
+
     for p in papers:
         p["source_type"] = p.get("source_type", "paper")
         if not is_duplicate(p.get("id", "")) and not is_similar_title(p.get("title", "")):
@@ -60,6 +65,9 @@ def generate_weekly_report(papers: List[Dict[str, Any]], repos: List[Dict[str, A
         r["source_type"] = r.get("source_type", "repo")
         if not is_duplicate(r.get("html_url", "")) and not is_similar_title(r.get("name", "")):
             candidates.append(r)
+    for o in others:
+        if not is_duplicate(o.get("id", o.get("link", ""))) and not is_similar_title(o.get("title", "")):
+            candidates.append(o)
 
     # Score
     for c in candidates:
@@ -128,8 +136,17 @@ def generate_weekly_report(papers: List[Dict[str, Any]], repos: List[Dict[str, A
     if not buckets["ai_hardware"]:
         report += "*No edge AI / TinyML discoveries this week.*\n\n"
 
-    # --- Section 7: Engineering Opportunities ---
-    report += "\n## 7. Engineering Opportunities\n\n"
+    # --- Section 7: Hardware News, Blogs & Demos ---
+    report += "\n## 7. Hardware News, Blogs & Demos\n\n"
+    for hn in buckets["hardware_news"][:8]:
+        title = hn.get("title", "?")
+        report += f"- **{title}** | {hn.get('source_type').upper()}\n"
+        report += f"  {hn.get('link', '')}\n"
+    if not buckets["hardware_news"]:
+        report += "*No hardware blogs, Reddit discussions, or videos this week.*\n\n"
+
+    # --- Section 8: Engineering Opportunities ---
+    report += "\n## 8. Engineering Opportunities\n\n"
     build_now = [c for c in candidates if c["action_class"] == "BUILD NOW"]
     build_add = [c for c in candidates if c["action_class"] == "BUILD WITH ADDITIONS"]
     if build_now or build_add:

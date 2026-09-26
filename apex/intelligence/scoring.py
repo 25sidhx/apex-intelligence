@@ -221,6 +221,11 @@ def calculate_apex_score(item: Dict[str, Any]) -> Tuple[float, Dict[str, float],
     if item.get("source_type") == "paper":
         novelty = 6.0
         reasons_plus.append("Research paper (likely novel)")
+    elif item.get("source_type") in ("blog", "video"):
+        novelty = 4.0
+    elif item.get("source_type") == "forum":
+        novelty = 3.0
+
     stars = item.get("stars", 0)
     created = item.get("created_at", "")
     if isinstance(created, str) and "2026" in created:
@@ -262,11 +267,14 @@ def calculate_apex_score(item: Dict[str, Any]) -> Tuple[float, Dict[str, float],
     if any(kw in text for kw in ["code available", "source code", "open source", "open-source"]):
         actionability += 2.0
         reasons_plus.append("Code appears available")
-    if any(kw in text for kw in ["tutorial", "getting started", "quickstart", "example"]):
+    if any(kw in text for kw in ["tutorial", "getting started", "quickstart", "example", "how to"]):
         actionability += 1.0
         reasons_plus.append("Has documentation/tutorial")
     if item.get("source_type") == "repo" and stars > 50:
         actionability += 1.0
+    if item.get("source_type") == "video":
+        actionability += 2.0  # Videos are usually high actionability/visual
+        reasons_plus.append("Video format (highly demonstrable)")
 
     # --- 5. SOURCE QUALITY (0-10) ---
     source_quality = 5.0
@@ -278,6 +286,16 @@ def calculate_apex_score(item: Dict[str, Any]) -> Tuple[float, Dict[str, float],
     elif tier == 3:
         source_quality = 4.0
         reasons_minus.append("Tier 3 source (discovery only, not primary evidence)")
+
+    # Adjust forum quality based on upvotes
+    if item.get("source_type") == "forum":
+        upvotes = item.get("upvotes", 0)
+        if upvotes > 100:
+            source_quality += 1.0
+            reasons_plus.append(f"Highly upvoted discussion ({upvotes} votes)")
+        elif upvotes < 10:
+            source_quality -= 2.0
+            reasons_minus.append(f"Low engagement discussion ({upvotes} votes)")
 
     # --- 6. HARDWARE COMPATIBILITY (0-10) ---
     hw_compat = 5.0
@@ -295,10 +313,14 @@ def calculate_apex_score(item: Dict[str, Any]) -> Tuple[float, Dict[str, float],
 
     # --- 7. LEARNING VALUE (0-10) ---
     learning = 4.0
-    if any(kw in text for kw in ["tutorial", "course", "learn", "beginner", "introduction"]):
+    if any(kw in text for kw in ["tutorial", "course", "learn", "beginner", "introduction", "how to"]):
         learning += 2.0
     if item.get("source_type") == "paper":
         learning += 1.5
+    if item.get("source_type") == "video":
+        learning += 1.5
+    if item.get("source_type") == "blog":
+        learning += 1.0
     if depth >= 7:
         learning += 1.5
         reasons_plus.append("High learning value (deep technical content)")

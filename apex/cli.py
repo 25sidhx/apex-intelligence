@@ -10,6 +10,9 @@ from rich.table import Table
 
 from apex.intelligence.arxiv_radar import fetch_recent_papers
 from apex.intelligence.github_radar import fetch_new_repos, fetch_trending_repos, fetch_releases
+from apex.intelligence.reddit_radar import fetch_top_reddit_posts
+from apex.intelligence.hackaday_radar import fetch_hackaday_posts
+from apex.intelligence.youtube_radar import fetch_youtube_videos
 from apex.engineering.scaffolds import scaffold_project, TEMPLATES
 from apex.content.humanizer import audit_text, clean_text
 from apex.utils.context_filter import filter_compiler_output
@@ -97,6 +100,26 @@ def scan(
                 console.print(f"  [cyan]{rel['repo']}[/cyan] — {rel['tag']} ({rel['published_at'][:10]})")
         console.print("")
 
+    if category in ["all", "reddit"]:
+        console.print("[bold cyan]Fetching Top Reddit Posts (r/embedded, r/robotics...)[/bold cyan]")
+        posts = fetch_top_reddit_posts(timeframe="week", max_results_per_sub=3)
+        for p in posts[:limit]:
+            console.print(f"[{p['upvotes']}] {p['title']} - {p['link']}")
+        console.print("")
+
+    if category in ["all", "hackaday"]:
+        console.print("[bold cyan]Fetching Hackaday Projects...[/bold cyan]")
+        posts = fetch_hackaday_posts(max_results=limit)
+        for p in posts:
+            console.print(f"- {p['title']} ({p['link']})")
+        console.print("")
+
+    if category in ["all", "youtube"]:
+        console.print("[bold cyan]Fetching YouTube Tech Demos...[/bold cyan]")
+        videos = fetch_youtube_videos(max_results_per_channel=1)
+        for v in videos[:limit]:
+            console.print(f"- {v['title']} ({v['link']})")
+        console.print("")
 
 from apex.reporting.telegram import send_telegram_message
 
@@ -111,8 +134,16 @@ def daily(
     new_repos = fetch_new_repos(max_results=limit * 2)
     trending = fetch_trending_repos(max_results=limit)
     releases = fetch_releases(days=3)
+    
+    # New Radars
+    reddit_posts = fetch_top_reddit_posts(timeframe="day", max_results_per_sub=1)
+    hackaday_posts = fetch_hackaday_posts(max_results=2)
+    youtube_videos = fetch_youtube_videos(max_results_per_channel=1)
+    
     all_repos = new_repos + trending + releases
-    report = generate_daily_report(papers, all_repos, limit=limit)
+    all_others = reddit_posts + hackaday_posts + youtube_videos
+    
+    report = generate_daily_report(papers, all_repos, all_others, limit=limit)
 
     out_path = Path(f"projects/daily_report_{datetime.date.today().isoformat()}.md")
     out_path.parent.mkdir(exist_ok=True)
@@ -143,8 +174,16 @@ def weekly(
     new_repos = fetch_new_repos(max_results=20)
     trending = fetch_trending_repos(max_results=15)
     releases = fetch_releases(days=7)
+    
+    # New Radars
+    reddit_posts = fetch_top_reddit_posts(timeframe="week", max_results_per_sub=3)
+    hackaday_posts = fetch_hackaday_posts(max_results=10)
+    youtube_videos = fetch_youtube_videos(max_results_per_channel=2)
+    
     all_repos = new_repos + trending + releases
-    report = generate_weekly_report(papers, all_repos)
+    all_others = reddit_posts + hackaday_posts + youtube_videos
+    
+    report = generate_weekly_report(papers, all_repos, all_others)
     
     out_path = Path(f"projects/weekly_report_{datetime.date.today().isoformat()}.md")
     out_path.parent.mkdir(exist_ok=True)

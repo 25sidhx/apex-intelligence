@@ -65,10 +65,11 @@ def _format_item(idx: int, item: Dict[str, Any]) -> str:
     return out
 
 
-def generate_daily_report(papers: List[Dict[str, Any]], repos: List[Dict[str, Any]], limit: int = 8) -> str:
+def generate_daily_report(papers: List[Dict[str, Any]], repos: List[Dict[str, Any]], others: List[Dict[str, Any]] = None, limit: int = 8) -> str:
     """Generates high-signal daily digest with quality gates and engineering context."""
 
     candidates = []
+    others = others or []
 
     # Process papers
     for p in papers:
@@ -83,12 +84,21 @@ def generate_daily_report(papers: List[Dict[str, Any]], repos: List[Dict[str, An
     # Process repos
     for r in repos:
         r["source_type"] = r.get("source_type", "repo")
-        item_id = r.get("html_url", "")
+        item_id = r.get("html_url", r.get("link", ""))
         if is_duplicate(item_id):
             continue
-        if is_similar_title(r.get("name", "")):
+        if is_similar_title(r.get("name", r.get("title", ""))):
             continue
         candidates.append(r)
+
+    # Process others (blogs, forums, videos)
+    for o in others:
+        item_id = o.get("id", o.get("link", ""))
+        if is_duplicate(item_id):
+            continue
+        if is_similar_title(o.get("title", "")):
+            continue
+        candidates.append(o)
 
     # Score everything
     for c in candidates:
@@ -146,7 +156,7 @@ def generate_daily_report(papers: List[Dict[str, Any]], repos: List[Dict[str, An
     # --- VP DEMO CORNER (scans ALL candidates, not just top N) ---
     demo_candidates = []
     for c in candidates:
-        if c.get("source_type") not in ("repo", "release"):
+        if c.get("source_type") not in ("repo", "release", "video", "blog"):
             continue
         text = " ".join([
             str(c.get("title", "")), str(c.get("name", "")),
